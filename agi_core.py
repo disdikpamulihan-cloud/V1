@@ -360,20 +360,20 @@ def grade_signal(consensus: float, signal: str, engine_states: dict,
         tot += 1
         if (sc > 0) == want_bull: agree += 1
     if tot: score += agree / tot * 20
-    if 5 <= atr <= 12: score += 15
+    if 5 <= atr <= 15: score += 15
     elif atr < 5: score += max(0, atr / 5 * 15)
-    else: score += max(0, 15 - (atr - 12) * 2)
+    else: score += max(0, 15 - (atr - 15) * 2)
     if memory_stats.get("n", 0) >= 5:
         wr = memory_stats.get("winrate", 50)
         score += min(10, max(0, (wr - 40) / 30 * 10))
     if anomaly_score >= 0.65: score -= 15
     score = max(0, min(100, score))
-    if score >= 90: grade = "A Super"
-    elif score >= 85: grade = "A+++"
-    elif score >= 75: grade = "A++"
-    elif score >= 65: grade = "A"
-    elif score >= 55: grade = "B"
-    elif score >= 45: grade = "C"
+    if score >= 85: grade = "A Super"
+    elif score >= 80: grade = "A+++"
+    elif score >= 70: grade = "A++"
+    elif score >= 60: grade = "A"
+    elif score >= 50: grade = "B"
+    elif score >= 40: grade = "C"
     else: grade = "D"
     return {"score": round(score, 2), "grade": grade}
 
