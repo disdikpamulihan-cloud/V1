@@ -3,3 +3,6 @@ numpy
 scikit-learn
 scipy
 requests
+numpy>=1.24.0
+pandas>=2.0.0
+tzdata>=2023.3
