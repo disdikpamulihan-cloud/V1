@@ -1,39 +1,53 @@
-import os, requests, numpy as np, pandas as pd, yfinance as yf
+import os, requests, numpy as np, pandas as pd
 from datetime import datetime, timezone, timedelta
 from core_engine import (find_swing_points, detect_bos_choch, find_order_blocks, 
                          find_fvg, detect_liquidity_sweep, calc_vwap, detect_rsi_divergence, 
                          calc_volume_delta, detect_ml_regime, detect_ml_anomaly, 
                          AGIMemory, grade_the_god_signal)
 
-# KONFIGURASI (JANGAN DIUBAH KALAU GAK PAHAM)
-SYMBOL = "XAUUSD=X"  # Gold
+# ==============================================================================
+# KONFIGURASI
+# ==============================================================================
+SYMBOL = "PAXGUSDT"  # Pax Gold (1 PAXG = 1 Oz Emas Fisik). Harga sangat mirip Spot XAUUSD MT5.
 INTERVAL = "15m"     # Timeframe
-PERIOD = "60d"       # Data history
+LIMIT = 500          # Jumlah candle历史 (500 candle 15m = sekitar 5 hari)
 
+# ==============================================================================
+# DATA FETCHER (BINANCE PUBLIC API - NO API KEY NEEDED)
+# ==============================================================================
 def get_market_data():
     try:
-        df = yf.download(SYMBOL, period=PERIOD, interval=INTERVAL, progress=False)
-        if df.empty or len(df) < 100: raise Exception("Data kosong")
-        df = df.reset_index()
-        # Flatten multi-index columns jika ada
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [col[0] for col in df.columns]
-        return df[['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']].rename(columns={'Datetime': 'date'})
+        print(f"📡 Mengambil data market untuk {SYMBOL} dari Binance...")
+        url = "https://api.binance.com/api/v3/klines"
+        params = {"symbol": SYMBOL, "interval": INTERVAL, "limit": LIMIT}
+        
+        response = requests.get(url, params=params, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Parse format klines Binance
+        df = pd.DataFrame(data, columns=[
+            'open_time', 'Open', 'High', 'Low', 'Close', 'Volume', 
+            'close_time', 'quote_vol', 'trades', 'taker_buy_base', 'taker_buy_quote', 'ignore'
+        ])
+        
+        # Convert ke tipe data yang benar
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            df[col] = df[col].astype(float)
+            
+        df['date'] = pd.to_datetime(df['open_time'], unit='ms')
+        df = df[['date', 'Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+        
+        print(f"✅ Data berhasil diambil: {len(df)} candle. Harga terakhir: ${df['Close'].iloc[-1]:.2f}")
+        return df
+        
     except Exception as e:
-        print(f"⚠️ yfinance gagal: {e}. Generating fallback data...")
-        # Fallback dummy data biar bot gak crash
-        np.random.seed(42)
-        length = 300
-        close = np.cumsum(np.random.normal(0, 2, length)) + 2000
-        return pd.DataFrame({
-            'date': pd.date_range(end=pd.Timestamp.now(), periods=length, freq='15min'),
-            'open': close + np.random.normal(0, 1, length),
-            'high': close + np.abs(np.random.normal(2, 1, length)),
-            'low': close - np.abs(np.random.normal(2, 1, length)),
-            'close': close,
-            'volume': np.random.lognormal(10, 1, length)
-        })
+        print(f"❌ Gagal mengambil data dari Binance: {e}")
+        raise Exception("Gagal fetch data. Pastikan server GitHub Actions bisa akses internet.")
 
+# ==============================================================================
+# TELEGRAM SENDER
+# ==============================================================================
 def send_telegram(text):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -45,11 +59,16 @@ def send_telegram(text):
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     try:
         r = requests.post(url, json=payload, timeout=10)
-        if r.status_code == 200: print("✅ Sinyal berhasil dikirim ke Telegram!")
-        else: print(f"❌ Telegram API Error: {r.text}")
+        if r.status_code == 200: 
+            print("✅ Sinyal berhasil dikirim ke Telegram!")
+        else: 
+            print(f"❌ Telegram API Error: {r.text}")
     except Exception as e:
         print(f"❌ Gagal kirim Telegram: {e}")
 
+# ==============================================================================
+# MAIN PIPELINE
+# ==============================================================================
 def run_god_pipeline():
     print("🚀 Initializing AGI God-Tier Pipeline...")
     df = get_market_data()
@@ -70,17 +89,18 @@ def run_god_pipeline():
     anom_score, is_anom = detect_ml_anomaly(df)
     
     # 3. Evaluate Current State
-    price = df['close'].iloc[-1]
-    has_choch = any("ChoCh" in str(x) for x in df['structure'].iloc[-5:].values)
-    has_bos = any("BOS" in str(x) for x in df['structure'].iloc[-5:].values)
-    has_sweep = any("Sweep" in str(x) for x in df['liquidity_sweep'].iloc[-5:].values)
+    price = float(df['Close'].iloc[-1])
+    has_choch = any("ChoCh" in str(x) for x in df['structure'].iloc[-10:].values)
+    has_bos = any("BOS" in str(x) for x in df['structure'].iloc[-10:].values)
+    has_sweep = any("Sweep" in str(x) for x in df['liquidity_sweep'].iloc[-10:].values)
     
-    entry_at_ob = any(ob['bottom'] <= price <= ob['top'] for ob in obs[-5:])
-    entry_at_fvg = any(fvg['bottom'] <= price <= fvg['top'] for fvg in fvgs[-5:])
+    entry_at_ob = any(ob['bottom'] <= price <= ob['top'] for ob in obs[-10:])
+    entry_at_fvg = any(fvg['bottom'] <= price <= fvg['top'] for fvg in fvgs[-10:])
     
-    direction = "BUY" if price > df['close'].iloc[-2] and ml_regime != "BEAR" else "SELL"
+    # Tentukan arah berdasarkan momentum jangka pendek & regime
+    direction = "BUY" if price > float(df['Close'].iloc[-5]) and ml_regime != "BEAR" else "SELL"
     
-    # 4. Memory Query (Dummy embedding for now, can be upgraded later)
+    # 4. Memory Query (Embedding dummy untuk demo, bisa di-upgrade nanti)
     emb = np.random.rand(32).astype(np.float32) 
     mem_stats = mem.query(emb)
     
@@ -95,13 +115,17 @@ def run_god_pipeline():
     
     # 6. OUTPUT & TELEGRAM
     if "A" in grade_obj.grade:
-        sl = price - 15 if direction == "BUY" else price + 15
-        tp1 = price + 20 if direction == "BUY" else price - 20
-        tp2 = price + 40 if direction == "BUY" else price - 40
+        # Hitung SL & TP dinamis berdasarkan ATR (Average True Range)
+        atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
+        sl = price - (atr * 1.5) if direction == "BUY" else price + (atr * 1.5)
+        tp1 = price + (atr * 1.5) if direction == "BUY" else price - (atr * 1.5)
+        tp2 = price + (atr * 3.0) if direction == "BUY" else price - (atr * 3.0)
         
         reasons_text = "\n".join([f"  • {r}" for r in grade_obj.reasons])
         wib_time = datetime.now(timezone(timedelta(hours=7))).strftime('%H:%M WIB')
         
+        # Catatan: Kita tetap labeli XAUUSD di output biar gampang dibaca, 
+        # tapi datanya pakai PAXG yang harganya nempel ke Spot Gold.
         caption = f"""
 💎 <b>AGI GOD-TIER SIGNAL</b> 💎
 ━━━━━━━━━━━━━━━━━━━━━━
@@ -126,12 +150,12 @@ def run_god_pipeline():
 🧬 <b>MEMORY:</b>
   • Cases: {mem_stats['n']} | WR: {mem_stats['wr']}%
 ━━━━━━━━━━━━━━━━━━━━━━
-⏰ {wib_time} | {SYMBOL}
+⏰ {wib_time} | XAUUSD (via PAXG)
         """
         send_telegram(caption)
     else:
         print(f"🗑 Signal Trashed. Grade: {grade_obj.grade} | Score: {grade_obj.score}")
-        # Simpan ke memory biar bot belajar dari sinyal yang dibuang
+        print(f"📊 Harga Saat Ini: ${price:.2f} | Regime: {ml_regime}")
         mem.store(emb, direction, "TRASHED")
 
 if __name__ == "__main__":
