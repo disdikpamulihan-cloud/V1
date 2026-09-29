@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       symbol:
-        description: 'Trading Symbol (misal XAUUSD)'
+        description: 'Trading Symbol'
         required: true
         default: 'XAUUSD'
       signal:
@@ -17,22 +17,6 @@ on:
           - BUY
           - SELL
         default: 'BUY'
-      entry:
-        description: 'Price Entry'
-        required: true
-        default: '2500.0'
-      sl:
-        description: 'Stop Loss'
-        required: true
-        default: '2488.0'
-      tp1:
-        description: 'Take Profit 1'
-        required: true
-        default: '2515.0'
-      tp2:
-        description: 'Take Profit 2'
-        required: true
-        default: '2530.0'
 
 jobs:
   run-agi-engine:
@@ -70,10 +54,6 @@ jobs:
           python run.py \
             --symbol "${{ github.event.inputs.symbol }}" \
             --signal "${{ github.event.inputs.signal }}" \
-            --entry ${{ github.event.inputs.entry }} \
-            --sl ${{ github.event.inputs.sl }} \
-            --tp1 ${{ github.event.inputs.tp1 }} \
-            --tp2 ${{ github.event.inputs.tp2 }} \
             --source "GitHub-Manual-OP"
 
       - name: Run Scheduled Scan
