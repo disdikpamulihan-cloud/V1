@@ -10,13 +10,14 @@ on:
         required: true
         default: 'XAUUSD'
       signal:
-        description: 'Signal Direction'
+        description: 'Signal Direction (AUTO = Bot pilih sendiri)'
         required: true
         type: choice
         options:
+          - AUTO
           - BUY
           - SELL
-        default: 'BUY'
+        default: 'AUTO'
 
 jobs:
   run-agi-engine:
@@ -45,7 +46,7 @@ jobs:
           restore-keys: |
             state-cache-${{ runner.os }}-
 
-      - name: Run Manual OP Signal Filter
+      - name: Run Manual / Auto OP Signal Filter
         if: github.event_name == 'workflow_dispatch'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -54,7 +55,7 @@ jobs:
           python run.py \
             --symbol "${{ github.event.inputs.symbol }}" \
             --signal "${{ github.event.inputs.signal }}" \
-            --source "GitHub-Manual-OP"
+            --source "GitHub-Workflow"
 
       - name: Run Scheduled Scan
         if: github.event_name == 'schedule'
@@ -62,4 +63,4 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python run.py --symbol "XAUUSD" --source "GitHub-Cron"
+          python run.py --symbol "XAUUSD" --signal "AUTO" --source "GitHub-Cron"
