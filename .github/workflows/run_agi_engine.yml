@@ -1,0 +1,85 @@
+name: AGI Engine High-Grade Automation
+
+on:
+  schedule:
+    - cron: '0 * * * 1-5'
+  workflow_dispatch:
+    inputs:
+      symbol:
+        description: 'Trading Symbol (misal XAUUSD)'
+        required: true
+        default: 'XAUUSD'
+      signal:
+        description: 'Signal Direction'
+        required: true
+        type: choice
+        options:
+          - BUY
+          - SELL
+        default: 'BUY'
+      entry:
+        description: 'Price Entry'
+        required: true
+        default: '2500.0'
+      sl:
+        description: 'Stop Loss'
+        required: true
+        default: '2488.0'
+      tp1:
+        description: 'Take Profit 1'
+        required: true
+        default: '2515.0'
+      tp2:
+        description: 'Take Profit 2'
+        required: true
+        default: '2530.0'
+
+jobs:
+  run-agi-engine:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Cache SQLite & State Memory
+        uses: actions/cache@v4
+        with:
+          path: .state_cache
+          key: state-cache-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            state-cache-${{ runner.os }}-
+
+      - name: Run Manual OP Signal Filter
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python run.py \
+            --symbol "${{ github.event.inputs.symbol }}" \
+            --signal "${{ github.event.inputs.signal }}" \
+            --entry ${{ github.event.inputs.entry }} \
+            --sl ${{ github.event.inputs.sl }} \
+            --tp1 ${{ github.event.inputs.tp1 }} \
+            --tp2 ${{ github.event.inputs.tp2 }} \
+            --source "GitHub-Manual-OP"
+
+      - name: Run Scheduled Scan
+        if: github.event_name == 'schedule'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python run.py --symbol "XAUUSD" --source "GitHub-Cron"
